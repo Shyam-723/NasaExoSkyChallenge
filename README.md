@@ -363,7 +363,7 @@ spaceapps2025/
 ├── README.md                              # This file
 ├── requirements.txt                       # Dependencies
 ├── train_multimodal_enhanced.py          # Main training script
-├── demo_multimodal.py                    # Demo inference script
+├── demo_inference.py                     # Interactive inference demo
 ├── src/                                   # Core source code
 │   ├── models.py                         # Model architectures
 │   ├── data_loader.py                    # Data loading utilities

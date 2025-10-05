@@ -87,7 +87,7 @@ scripts/
 
 ### 🎮 **Interactive Analysis**
 - `notebooks/demo_pipeline.ipynb` - Complete pipeline demonstration
-- `demo_multimodal.py` - Multimodal inference demo
+- `demo_inference.py` - Interactive inference demo
 - `demo_scaling_strategy.py` - Scaling strategy demonstration
 
 ## 📋 **Documentation**
@@ -127,7 +127,7 @@ scripts/
 ### 🥉 **Third Priority (Advanced)**
 1. `train_multimodal_enhanced.py` - Retraining
 2. `inference_data_requirements.py` - Full data specs
-3. `demo_multimodal.py` - Advanced features
+3. `demo_inference.py` - Interactive examples
 
 ---
 
