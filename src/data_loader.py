@@ -120,9 +120,13 @@ def extract_koi_features(df):
     """Extract and standardize features from KOI dataset."""
     logger.info("Processing KOI features...")
     
-    # Create target variable from disposition
+    # Create target variable from disposition - use only CONFIRMED vs FALSE POSITIVE
     if 'koi_disposition' in df.columns:
-        df['is_planet'] = (df['koi_disposition'] == 'CONFIRMED').astype(int)
+        disp = df['koi_disposition'].astype(str).str.upper().str.strip()
+        keep = disp.isin(['CONFIRMED', 'FALSE POSITIVE'])
+        df = df.loc[keep].copy()
+        df['is_planet'] = (disp.loc[keep] == 'CONFIRMED').astype(int)
+        logger.info(f"Filtered to {len(df)} samples with clear labels (CONFIRMED/FALSE POSITIVE only)")
     else:
         # Handle synthetic data without disposition
         df['is_planet'] = 0  # Default to non-planet
@@ -150,6 +154,15 @@ def extract_koi_features(df):
         'koi_smet': 'star_metallicity',
         'koi_smet_err1': 'star_metallicity_err1',
         'koi_smet_err2': 'star_metallicity_err2',
+        'koi_steff': 'star_temp',
+        'koi_steff_err1': 'star_temp_err1',
+        'koi_steff_err2': 'star_temp_err2',
+        'koi_srad': 'star_radius',
+        'koi_srad_err1': 'star_radius_err1',
+        'koi_srad_err2': 'star_radius_err2',
+        'koi_smass': 'star_mass',
+        'koi_smass_err1': 'star_mass_err1',
+        'koi_smass_err2': 'star_mass_err2',
     }
     
     # Check if we have real KOI columns or synthetic data

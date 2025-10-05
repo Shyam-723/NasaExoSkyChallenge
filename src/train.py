@@ -378,6 +378,12 @@ def main_training_pipeline(config: Dict) -> Dict:
     loaders = prepare_data_loaders(splits, 
                                   batch_size=config.get('batch_size', 32))
     
+    # Auto-set class weight from training split for better imbalance handling
+    pos = splits['train']['y'].sum()
+    neg = len(splits['train']['y']) - pos
+    config['pos_weight'] = float(neg / max(pos, 1))
+    logger.info(f"Auto-computed pos_weight: {config['pos_weight']:.3f} (neg={neg}, pos={pos})")
+    
     # Create models (only the ones we want to train)
     model_config = {
         'tabular_input_size': splits['train']['X'].shape[1],
