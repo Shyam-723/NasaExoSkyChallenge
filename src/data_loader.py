@@ -18,38 +18,44 @@ def load_and_prepare_data(data_dir='data/raw/'):
         # Load data sources
         logger.info("Loading tabular data...")
         
-        # Check if we have real KOI data with actual features
-        koi_path = f"{data_dir}/q1_q17_dr25_sup_koi_2024.07.03_19.12.12.csv"
-        global_path = f"{data_dir}/all_global.csv"
-        local_path = f"{data_dir}/all_local.csv"
-        
-        # Strategy: prioritize synthetic global/local features if they exist,
-        # otherwise fall back to real KOI data
-        if os.path.exists(global_path) and os.path.exists(local_path):
-            # Load synthetic data format (global + local features)
-            global_df = pd.read_csv(global_path)
-            local_df = pd.read_csv(local_path) 
-            
-            # Merge features
-            merged_df = global_df.merge(local_df, on='kepid', how='inner')
-            
-            # Load labels if available
-            if os.path.exists(koi_path):
-                koi_labels = pd.read_csv(koi_path)
-                # Merge labels
-                merged_df = merged_df.merge(koi_labels[['kepid', 'koi_disposition']], on='kepid', how='left')
-                
-            # Convert to KOI format for processing
-            koi_df = merged_df
-            logger.info(f"Loaded {len(koi_df)} synthetic records")
-            
-        elif os.path.exists(koi_path):
-            # Fall back to real KOI data
-            koi_df = pd.read_csv(koi_path, comment='#')
-            logger.info(f"Loaded {len(koi_df)} KOI records")
+        # Priority 1: Check for real KOI data with actual features
+        koi_path = f"{data_dir}/lighkurve_KOI_dataset.csv"
+        if os.path.exists(koi_path):
+            # Load real KOI data with actual stellar parameters
+            koi_df = pd.read_csv(koi_path)
+            logger.info(f"Loaded {len(koi_df)} real KOI records with {koi_df.shape[1]} features")
         else:
-            logger.warning("No data files found")
-            koi_df = pd.DataFrame()
+            # Priority 2: Check for minimal KOI labels file
+            koi_labels_path = f"{data_dir}/q1_q17_dr25_sup_koi_2024.07.03_19.12.12.csv"
+            global_path = f"{data_dir}/all_global.csv"
+            local_path = f"{data_dir}/all_local.csv"
+            
+            # Strategy: Use synthetic global/local features if they exist
+            if os.path.exists(global_path) and os.path.exists(local_path):
+                # Load synthetic data format (global + local features)
+                global_df = pd.read_csv(global_path)
+                local_df = pd.read_csv(local_path) 
+                
+                # Merge features
+                merged_df = global_df.merge(local_df, on='kepid', how='inner')
+                
+                # Load labels if available
+                if os.path.exists(koi_labels_path):
+                    koi_labels = pd.read_csv(koi_labels_path)
+                    # Merge labels
+                    merged_df = merged_df.merge(koi_labels[['kepid', 'koi_disposition']], on='kepid', how='left')
+                    
+                # Convert to KOI format for processing
+                koi_df = merged_df
+                logger.info(f"Loaded {len(koi_df)} synthetic records")
+                
+            elif os.path.exists(koi_labels_path):
+                # Fall back to minimal labels only
+                koi_df = pd.read_csv(koi_labels_path)
+                logger.info(f"Loaded {len(koi_df)} minimal KOI records")
+            else:
+                logger.warning("No data files found")
+                koi_df = pd.DataFrame()
         
         # For now, create empty dataframes for other sources
         toi_df = pd.DataFrame()
@@ -150,11 +156,18 @@ def extract_koi_features(df):
     has_real_koi_columns = any(col in df.columns for col in feature_mapping.keys())
     
     if has_real_koi_columns:
-        # Extract real KOI features
+        # Extract real KOI features using the mapping
         extracted = pd.DataFrame()
         for old_name, new_name in feature_mapping.items():
             if old_name in df.columns:
                 extracted[new_name] = df[old_name]
+                
+        # Also include any other numeric columns not in the mapping
+        other_numeric_cols = df.select_dtypes(include=[np.number]).columns
+        for col in other_numeric_cols:
+            if col not in ['kepid'] and col not in feature_mapping.keys():
+                extracted[col] = df[col]
+                
     else:
         # Handle synthetic data - use existing columns as features
         numeric_cols = df.select_dtypes(include=[np.number]).columns
