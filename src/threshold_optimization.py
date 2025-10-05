@@ -2,8 +2,20 @@
 Threshold optimization for mission-critical FPR targets
 """
 import numpy as np
-from sklearn.metrics import roc_curve
-from evaluate import calculate_recall_at_fpr
+from sklearn.metrics import roc_curve, precision_recall_curve
+from sklearn.metrics import confusion_matrix, classification_report
+
+def calculate_recall_at_fpr(y_true, y_prob, fpr_threshold=0.05):
+    """Calculate recall at a specific false positive rate"""
+    fpr, tpr, thresholds = roc_curve(y_true, y_prob)
+    
+    # Find the threshold that gives us the target FPR
+    idx = np.where(fpr <= fpr_threshold)[0]
+    if len(idx) == 0:
+        return 0.0  # Cannot achieve target FPR
+    
+    # Return the recall (TPR) at the target FPR
+    return tpr[idx[-1]]
 
 def threshold_for_fpr(y_true, y_prob, target_fpr=0.05):
     """

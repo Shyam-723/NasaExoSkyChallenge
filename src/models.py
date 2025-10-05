@@ -113,12 +113,22 @@ class ResidualCNN1D(nn.Module):
         Forward pass through the network.
         
         Args:
-            x: Input tensor of shape (batch_size, n_windows, sequence_length)
+            x: Input tensor of shape (batch_size, n_windows, sequence_length) or (batch_size, sequence_length)
             
         Returns:
             Output tensor of shape (batch_size, output_size)
         """
-        batch_size, n_windows, seq_len = x.shape
+        # Handle different input shapes
+        if len(x.shape) == 2:
+            # Shape: (batch_size, sequence_length) - single window per sample
+            batch_size, seq_len = x.shape
+            n_windows = 1
+            x = x.unsqueeze(1)  # Add window dimension: (batch_size, 1, sequence_length)
+        elif len(x.shape) == 3:
+            # Shape: (batch_size, n_windows, sequence_length) - multiple windows per sample
+            batch_size, n_windows, seq_len = x.shape
+        else:
+            raise ValueError(f"Expected 2D or 3D input, got {x.shape}")
         
         if n_windows == 0:
             # Handle case with no windows

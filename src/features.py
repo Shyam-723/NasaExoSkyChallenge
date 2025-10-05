@@ -43,7 +43,11 @@ def download_lightcurve(target_id: str, mission: str = 'Kepler'):
         # Stitch together and normalize
         lc = lc_collection.stitch().normalize()
         
-        logger.info(f"Downloaded lightcurve: {len(lc)} points, {lc.time.max() - lc.time.min():.1f} days")
+        try:
+            time_span = float((lc.time.max() - lc.time.min()).value)  # Get the numeric value
+            logger.info(f"Downloaded lightcurve: {len(lc)} points, {time_span:.1f} days")
+        except:
+            logger.info(f"Downloaded lightcurve: {len(lc)} points")
         return lc
         
     except Exception as e:
@@ -74,10 +78,18 @@ def preprocess_lightcurve(lc,
     
     # Detrend using Savitzky-Golay filter
     if len(lc_clean) > window_length:
-        lc_detrended = lc_clean.flatten(window_length=window_length, method='savgol')
+        try:
+            lc_detrended = lc_clean.flatten(window_length=window_length, method='savgol')
+        except TypeError:
+            # Fallback for newer Lightkurve versions without method parameter
+            lc_detrended = lc_clean.flatten(window_length=window_length)
     else:
         # Use simpler detrending for short lightcurves
-        lc_detrended = lc_clean.flatten(window_length=min(51, len(lc_clean)//2), method='median')
+        try:
+            lc_detrended = lc_clean.flatten(window_length=min(51, len(lc_clean)//2), method='median')
+        except TypeError:
+            # Fallback for newer Lightkurve versions
+            lc_detrended = lc_clean.flatten(window_length=min(51, len(lc_clean)//2))
     
     logger.info(f"Preprocessing complete: {len(lc_detrended)} points remaining")
     return lc_detrended
