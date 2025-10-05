@@ -1,4 +1,32 @@
-# � Enhanced Multimodal Exoplanet Detection Pipeline
+# 🚀 Enhanced Multimodal Exoplanet Detection Pipeline
+
+![Python](https://img.shields.io/badge/python-3.11+-blue.svg)
+![PyTorch](https://img.shields.io/badge/PyTorch-2.8.0+-red.svg)
+![Accuracy](https://img.shields.io/badge/Validation%20Accuracy-93.47%25-brightgreen.svg)
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
+
+> **🔥 Quick Start**: Looking to make predictions? See **[INFERENCE_GUIDE.md](INFERENCE_GUIDE.md)** for immediate usage instructions!
+
+**🏆 UPGRADED: 93.47% Validation Accuracy Enhanced Multi-Modal Pipeline**
+
+A state-of-the-art multimodal machine learning pipeline for exoplanet detection combining tabular features with deep CNN analysis of Kepler light curves and target pixel files.
+
+## 📋 Quick Navigation
+
+### 🔥 **Ready to Use**
+- **[INFERENCE_GUIDE.md](INFERENCE_GUIDE.md)** - Complete prediction guide (START HERE)
+- **[inference_template.py](inference_template.py)** - Drop-in prediction function
+- **[FILE_STRUCTURE_GUIDE.md](FILE_STRUCTURE_GUIDE.md)** - Navigate all files easily
+
+### 🧠 **Understanding the Models**  
+- **[analyze_performance_gap.py](analyze_performance_gap.py)** - Why tabular outperforms multimodal
+- **[check_data_overlap.py](check_data_overlap.py)** - Data validation (no leakage)
+- **[MULTI_MODAL_RESULTS.md](MULTI_MODAL_RESULTS.md)** - Performance analysis
+
+### 🛠️ **For Developers**
+- **[TRAINING_GUIDE.md](TRAINING_GUIDE.md)** - Retrain models
+- **[TECHNICAL_BREAKDOWN.md](TECHNICAL_BREAKDOWN.md)** - Architecture details
+- **[CNN_COVERAGE_STRATEGY.md](CNN_COVERAGE_STRATEGY.md)** - Expand CNN dataed Multimodal Exoplanet Detection Pipeline
 
 ![Python](https://img.shields.io/badge/python-3.11+-blue.svg)
 ![PyTorch](https://img.shields.io/badge/PyTorch-2.8.0+-red.svg)
