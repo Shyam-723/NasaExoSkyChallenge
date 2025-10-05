@@ -18,11 +18,35 @@ def load_and_prepare_data(data_dir='data/raw/'):
         # Load data sources
         logger.info("Loading tabular data...")
         
-        # Priority 1: Check for real KOI data with actual features
+        # Priority 1: Check for enriched KOI data with stellar parameters
+        koi_enriched_path = f"{data_dir}/lighkurve_KOI_dataset_enriched.csv"
         koi_path = f"{data_dir}/lighkurve_KOI_dataset.csv"
-        if os.path.exists(koi_path):
+        
+        if os.path.exists(koi_enriched_path):
+            # Load enriched KOI data with stellar parameters
+            koi_df = pd.read_csv(koi_enriched_path)
+            logger.info(f"Loaded {len(koi_df)} enriched KOI records with {koi_df.shape[1]} features")
+        elif os.path.exists(koi_path):
             # Load real KOI data with actual stellar parameters
             koi_df = pd.read_csv(koi_path)
+            
+            # Apply column renaming for stellar parameters if present
+            rename_map = {
+                'koi_teff': 'koi_steff',
+                'teff': 'koi_steff',
+                'logg': 'koi_slogg', 
+                'feh': 'koi_smet',
+                'stellar_radius': 'koi_srad',
+                'stellar_mass': 'koi_smass',
+                'transit_depth': 'koi_depth',
+                'depth': 'koi_depth'
+            }
+            original_cols = set(koi_df.columns)
+            koi_df = koi_df.rename(columns={k: v for k, v in rename_map.items() if k in koi_df.columns})
+            renamed_cols = set(koi_df.columns) - original_cols
+            if renamed_cols:
+                logger.info(f"Renamed columns: {list(renamed_cols)}")
+            
             logger.info(f"Loaded {len(koi_df)} real KOI records with {koi_df.shape[1]} features")
         else:
             # Priority 2: Check for minimal KOI labels file
@@ -181,6 +205,41 @@ def extract_koi_features(df):
             if col not in ['kepid'] and col not in feature_mapping.keys():
                 extracted[col] = df[col]
                 
+        # 🔥 FEATURE ENGINEERING: Transit geometry & error ratios
+        eps = 1e-12
+        
+        # Base columns (exist in your CSV)
+        P = extracted.get('period', pd.Series(dtype=float))
+        Pe1, Pe2 = extracted.get('period_err1', pd.Series(dtype=float)), extracted.get('period_err2', pd.Series(dtype=float))
+        T0 = extracted.get('epoch', pd.Series(dtype=float))
+        Te1, Te2 = extracted.get('epoch_err1', pd.Series(dtype=float)), extracted.get('epoch_err2', pd.Series(dtype=float))
+        D = extracted.get('duration', pd.Series(dtype=float))
+        De1, De2 = extracted.get('duration_err1', pd.Series(dtype=float)), extracted.get('duration_err2', pd.Series(dtype=float))
+        
+        if not P.empty and not D.empty:
+            # Duty cycle + log scales
+            extracted['duty_cycle'] = (D / (P + eps)).clip(lower=0)
+            extracted['log_period'] = np.log10(P + eps)
+            extracted['log_duration'] = np.log10(D + eps)
+            
+            # Symmetry & relative-uncertainty proxies
+            if not Pe1.empty and not Pe2.empty:
+                extracted['period_err_rel'] = (np.abs(Pe1) + np.abs(Pe2)) / (np.abs(P) + eps)
+                extracted['err_asym_period'] = np.abs(np.abs(Pe1) - np.abs(Pe2)) / (np.abs(Pe1) + np.abs(Pe2) + eps)
+            
+            if not De1.empty and not De2.empty:
+                extracted['duration_err_rel'] = (np.abs(De1) + np.abs(De2)) / (np.abs(D) + eps)
+                extracted['err_asym_duration'] = np.abs(np.abs(De1) - np.abs(De2)) / (np.abs(De1) + np.abs(De2) + eps)
+            
+            if not Te1.empty and not Te2.empty:
+                extracted['epoch_err_span'] = (np.abs(Te1) + np.abs(Te2))
+        
+        # If koi_quarters exists: count of quarters as numeric signal
+        if 'koi_quarters' in df.columns:
+            extracted['n_quarters'] = df['koi_quarters'].astype(str).str.count('1')  # Count observation quarters
+            
+        logger.info(f"Added {7 + (1 if 'koi_quarters' in df.columns else 0)} engineered features")
+                
     else:
         # Handle synthetic data - use existing columns as features
         numeric_cols = df.select_dtypes(include=[np.number]).columns
@@ -303,103 +362,86 @@ def extract_lightkurve_features(df):
     logger.info(f"Extracted {len(extracted)} Lightkurve features")
     return extracted
 
-def create_train_val_test_splits(data_dict, test_size=0.2, val_size=0.2, random_state=42):
+def create_train_val_test_splits(data, val_size=0.2, test_size=0.2, random_state=42):
     """
-    Create train/validation/test splits avoiding star leakage using GroupKFold.
-    
-    Args:
-        data_dict: Output from load_and_prepare_data()
-        test_size: Fraction for test set
-        val_size: Fraction of remaining for validation
-        random_state: Random seed
-    
-    Returns:
-        dict: Train/val/test splits with indices
+    Create train/validation/test splits with proper scaling
     """
-    logger.info("Creating train/validation/test splits...")
-    
-    # Combine all features
-    all_features = []
-    all_targets = []
+    all_X = []
+    all_y = []
     all_groups = []
-    source_info = []
+    all_feature_names = None  # Track feature names
     
-    for source, df in data_dict['features']:
-        if len(df) > 0:
-            # Get numeric features
-            numeric_cols = df.select_dtypes(include=[np.number]).columns
-            feature_cols = [col for col in numeric_cols if col not in ['is_planet', 'target_id']]
-            
-            features = df[feature_cols].fillna(0).values
-            targets = df['is_planet'].values
-            groups = df['target_id'].values  # Group by stellar system
-            
-            all_features.append(features)
-            all_targets.extend(targets)
-            all_groups.extend(groups)
-            source_info.extend([source] * len(df))
+    for source, df in data['features']:
+        # Get feature columns (exclude metadata and target)
+        feature_cols = [col for col in df.columns 
+                       if col not in ['target_id', 'koi_id', 'is_planet', 'source'] 
+                       and df[col].dtype in ['int64', 'float64']]
+        
+        # Capture feature names from first source
+        if all_feature_names is None:
+            all_feature_names = list(feature_cols)
+            print(f"Feature columns ({len(feature_cols)}): {feature_cols}")
+        
+        X = df[feature_cols].values
+        y = df['is_planet'].values
+        
+        # Use target_id for grouping (same star system)
+        groups = df['target_id'].values
+        
+        all_X.append(X)
+        all_y.append(y)
+        all_groups.append(groups)
     
-    if not all_features:
-        raise ValueError("No features found in data")
+    # Combine all sources
+    X_combined = np.vstack(all_X)
+    y_combined = np.hstack(all_y)
+    groups_combined = np.hstack(all_groups)
     
-    # Combine features
-    X = np.vstack(all_features)
-    y = np.array(all_targets)
-    groups = np.array(all_groups)
+    print(f"Total combined data: {X_combined.shape[0]} samples, {X_combined.shape[1]} features")
+    print(f"Class distribution: {np.bincount(y_combined.astype(int))}")
     
-    logger.info(f"Total samples: {len(X)}, Features: {X.shape[1]}, Positive class: {y.sum()}")
+    # Group-aware split to avoid data leakage
+    gkf = GroupKFold(n_splits=int(1/test_size))
+    train_val_idx, test_idx = next(gkf.split(X_combined, y_combined, groups_combined))
     
-    # Create splits avoiding group leakage
-    unique_groups = np.unique(groups)
+    X_train_val, X_test = X_combined[train_val_idx], X_combined[test_idx]
+    y_train_val, y_test = y_combined[train_val_idx], y_combined[test_idx]
+    groups_train_val = groups_combined[train_val_idx]
     
-    # First split: separate test set
-    group_train, group_test = train_test_split(
-        unique_groups, test_size=test_size, random_state=random_state, 
-        stratify=None  # Can't stratify groups directly
-    )
+    # Split train_val into train and validation
+    val_size_adjusted = val_size / (1 - test_size)
+    gkf_val = GroupKFold(n_splits=int(1/val_size_adjusted))
+    train_idx, val_idx = next(gkf_val.split(X_train_val, y_train_val, groups_train_val))
     
-    # Second split: separate validation from train
-    group_train, group_val = train_test_split(
-        group_train, test_size=val_size/(1-test_size), random_state=random_state
-    )
+    X_train, X_val = X_train_val[train_idx], X_train_val[val_idx]
+    y_train, y_val = y_train_val[train_idx], y_train_val[val_idx]
     
-    # Get indices for each split
-    train_idx = np.where(np.isin(groups, group_train))[0]
-    val_idx = np.where(np.isin(groups, group_val))[0] 
-    test_idx = np.where(np.isin(groups, group_test))[0]
-    
-    # Create standardized features
+    # Scale features using only training data
     scaler = StandardScaler()
-    X_train = scaler.fit_transform(X[train_idx])
-    X_val = scaler.transform(X[val_idx])
-    X_test = scaler.transform(X[test_idx])
+    
+    # Handle NaN values before scaling
+    from sklearn.impute import SimpleImputer
+    imputer = SimpleImputer(strategy='median')
+    
+    # Fit imputer and scaler on training data only
+    X_train_imputed = imputer.fit_transform(X_train)
+    X_train_scaled = scaler.fit_transform(X_train_imputed)
+    
+    # Apply to validation and test sets
+    X_val_imputed = imputer.transform(X_val)
+    X_val_scaled = scaler.transform(X_val_imputed)
+    
+    X_test_imputed = imputer.transform(X_test)
+    X_test_scaled = scaler.transform(X_test_imputed)
+    
+    print(f"Applied median imputation and scaling to handle {np.isnan(X_train).sum()} NaN values")
     
     splits = {
-        'train': {
-            'X': X_train,
-            'y': y[train_idx],
-            'groups': groups[train_idx],
-            'indices': train_idx
-        },
-        'val': {
-            'X': X_val, 
-            'y': y[val_idx],
-            'groups': groups[val_idx],
-            'indices': val_idx
-        },
-        'test': {
-            'X': X_test,
-            'y': y[test_idx], 
-            'groups': groups[test_idx],
-            'indices': test_idx
-        },
-        'scaler': scaler,
-        'feature_names': feature_cols
+        'train': {'X': X_train_scaled, 'y': y_train},
+        'val': {'X': X_val_scaled, 'y': y_val},
+        'test': {'X': X_test_scaled, 'y': y_test},
+        'feature_names': all_feature_names
     }
-    
-    logger.info(f"Train: {len(train_idx)} ({y[train_idx].sum()} positive)")
-    logger.info(f"Val: {len(val_idx)} ({y[val_idx].sum()} positive)")
-    logger.info(f"Test: {len(test_idx)} ({y[test_idx].sum()} positive)")
     
     return splits
 
